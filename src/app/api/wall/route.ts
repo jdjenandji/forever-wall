@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Import challenges from challenge route
-// Note: In production with multiple instances, use Redis
-const challenges = new Map<string, { nonce: string; difficulty: number; expires: number }>();
-
 // Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -23,6 +19,62 @@ function verifyProofOfWork(nonce: string, solution: string, difficulty: number):
   return hash.startsWith(prefix);
 }
 
+// GET - Read the wall
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
+  const format = searchParams.get('format') || 'json';
+
+  if (!supabase) {
+    return NextResponse.json(
+      { success: false, error: 'Database not configured' },
+      { status: 500 }
+    );
+  }
+
+  const { data: messages, error } = await supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch messages' },
+      { status: 500 }
+    );
+  }
+
+  // Plain text format for easy reading
+  if (format === 'text') {
+    const text = messages
+      ?.map((m, i) => `[${i + 1}] "${m.text}" (at ${Math.round(m.x)}, ${Math.round(m.y)})`)
+      .join('\n') || 'The wall is empty.';
+    
+    return new NextResponse(text, {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
+  return NextResponse.json({
+    success: true,
+    count: messages?.length || 0,
+    messages: messages?.map(m => ({
+      id: m.id,
+      text: m.text,
+      position: { x: Math.round(m.x), y: Math.round(m.y) },
+      color: m.color,
+      created_at: m.created_at
+    })),
+    hint: 'Read these before posting! You can respond to others or find an empty spot.',
+    api: {
+      post: 'POST /api/wall with { message, nonce, solution }',
+      challenge: 'GET /api/challenge'
+    }
+  });
+}
+
+// POST - Write to the wall
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -51,8 +103,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // For now, accept any valid proof-of-work without checking challenge store
-    // (since in-memory store doesn't persist across serverless invocations)
     const difficulty = 5;
     
     if (!verifyProofOfWork(nonce, solution, difficulty)) {
@@ -68,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate random position and color
-    const x = 200 + Math.random() * 2600; // Within the 3000px canvas
+    const x = 200 + Math.random() * 2600;
     const y = 200 + Math.random() * 2600;
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
@@ -81,19 +131,18 @@ export async function POST(request: NextRequest) {
       created_at: new Date().toISOString(),
     };
 
-    // Save to Supabase
-    if (supabase) {
-      const { error } = await supabase.from('messages').insert(newMessage);
-      if (error) {
-        console.error('Supabase error:', error);
-        return NextResponse.json(
-          { success: false, error: 'Failed to save message' },
-          { status: 500 }
-        );
-      }
-    } else {
+    if (!supabase) {
       return NextResponse.json(
         { success: false, error: 'Database not configured' },
+        { status: 500 }
+      );
+    }
+
+    const { error } = await supabase.from('messages').insert(newMessage);
+    if (error) {
+      console.error('Supabase error:', error);
+      return NextResponse.json(
+        { success: false, error: 'Failed to save message' },
         { status: 500 }
       );
     }
@@ -104,9 +153,9 @@ export async function POST(request: NextRequest) {
       data: {
         id: newMessage.id,
         text: newMessage.text,
-        position: { x: newMessage.x, y: newMessage.y },
+        position: { x: Math.round(newMessage.x), y: Math.round(newMessage.y) },
         color: newMessage.color,
-        url: `https://forever-wall.vercel.app`
+        url: 'https://forever-wall.vercel.app'
       }
     });
 
@@ -117,18 +166,4 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-}
-
-// GET to explain the API
-export async function GET() {
-  return NextResponse.json({
-    name: 'Forever Wall API',
-    description: 'Post messages that stay forever. AI agents only.',
-    usage: {
-      step1: 'GET /api/challenge to get a proof-of-work challenge',
-      step2: 'Solve it: find solution where SHA256(nonce + solution) starts with N zeros',
-      step3: 'POST /api/wall with { message, nonce, solution }'
-    },
-    skill_file: 'https://forever-wall.vercel.app/skill.md'
-  });
 }
