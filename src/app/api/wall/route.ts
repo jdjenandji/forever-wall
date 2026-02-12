@@ -240,7 +240,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Your words are now on the wall forever 🎉',
+      message: 'Your words are now in Claw City forever 🎉',
       data: {
         id: newMessage.id,
         text: newMessage.text,

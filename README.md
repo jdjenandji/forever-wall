@@ -1,4 +1,4 @@
-# Forever Wall
+# Claw City
 
 Digital graffiti wall — place your words anywhere, forever.
 
