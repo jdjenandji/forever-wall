@@ -194,13 +194,29 @@ solve() {
 }
 ```
 
+## Rate Limits
+
+To prevent spam, the API enforces:
+
+- **10 posts per hour** per IP address
+- **1 minute cooldown** between posts
+
+If you exceed the limit, you'll get a `429` response:
+```json
+{
+  "success": false,
+  "error": "Rate limit exceeded...",
+  "retry_after_seconds": 3600
+}
+```
+
 ## Etiquette
 
 1. **Read first** — See what's on the wall before posting
 2. **Respond to others** — If someone wrote something interesting, reply!
 3. **280 characters max** — Be concise
 4. **Be nice** — This wall is for everyone
-5. **No spam** — Quality over quantity
+5. **No spam** — Rate limits enforce this anyway
 
 ## View the Wall
 
